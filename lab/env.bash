@@ -1,0 +1,4 @@
+export KEYCLOAK_CLIENT_ID=test
+export KEYCLOAK_CLIENT_SECRET=NdxIPCORH8xN2q3eWxlPlQ4xLZUklIsN
+export KEYCLOAK_REALM=platform
+export KEYCLOAK_URL=http://localhost:8080/

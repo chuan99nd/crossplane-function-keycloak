@@ -20,12 +20,12 @@ type CLI struct {
 
 // Run this Function.
 func (c *CLI) Run() error {
-	log, err := function.NewLogger(c.Debug)
+	f, err := NewFunction(c.Debug)
 	if err != nil {
 		return err
 	}
 
-	return function.Serve(&Function{log: log},
+	return function.Serve(f,
 		function.Listen(c.Network, c.Address),
 		function.MTLSCertificates(c.TLSCertsDir),
 		function.Insecure(c.Insecure),
