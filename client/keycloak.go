@@ -8,13 +8,12 @@ import (
 
 	"github.com/samber/lo"
 
+	cache "github.com/Code-Hex/go-generics-cache"
 	gocloak "github.com/Nerzal/gocloak/v13"
-	cache "github.com/patrickmn/go-cache"
 )
 
 const (
-	defaultCacheExpiration      = 30 * time.Second
-	defaultCacheCleanupInterval = 60 * time.Second
+	defaultCacheExpiration = 30 * time.Second
 )
 
 type KeycloakClientInterface interface {
@@ -28,9 +27,11 @@ type KeycloakClient struct {
 	Realm        string
 	Url          string
 
-	cacheClient    *cache.Cache
-	keycloakClient *gocloak.GoCloak
-	ctx            context.Context
+	cacheToken      *cache.Cache[string, string]
+	cacheGroup      *cache.Cache[string, map[string]*gocloak.Group]
+	cacheGroupUsers *cache.Cache[string, []string]
+	keycloakClient  *gocloak.GoCloak
+	ctx             context.Context
 }
 
 func NewKeycloakClient() KeycloakClientInterface {
@@ -40,7 +41,9 @@ func NewKeycloakClient() KeycloakClientInterface {
 	realm := os.Getenv("KEYCLOAK_REALM")
 	url := os.Getenv("KEYCLOAK_URL")
 
-	cacheClient := cache.New(defaultCacheExpiration, defaultCacheCleanupInterval)
+	cacheToken := cache.New[string, string]()
+	cacheGroup := cache.New[string, map[string]*gocloak.Group]()
+	cacheGroupUsers := cache.New[string, []string]()
 	keycloakClient := gocloak.NewClient(url)
 
 	return &KeycloakClient{
@@ -49,24 +52,26 @@ func NewKeycloakClient() KeycloakClientInterface {
 		Realm:        realm,
 		Url:          url,
 
-		cacheClient:    cacheClient,
-		keycloakClient: keycloakClient,
-		ctx:            ctx,
+		cacheToken:      cacheToken,
+		cacheGroup:      cacheGroup,
+		cacheGroupUsers: cacheGroupUsers,
+		keycloakClient:  keycloakClient,
+		ctx:             ctx,
 	}
 }
 
 func (k *KeycloakClient) GetToken() (string, error) {
-	token, exist := k.cacheClient.Get("token")
+	token, exist := k.cacheToken.Get("token")
 	if !exist {
 		token, err := k.keycloakClient.LoginClient(k.ctx, k.ClientId, k.ClientSecret, k.Realm)
 		if err != nil {
-			k.cacheClient.Delete("token")
+			k.cacheToken.Delete("token")
 			return "", err
 		}
-		k.cacheClient.Set("token", token.AccessToken, 10*time.Minute)
+		k.cacheToken.Set("token", token.AccessToken, cache.WithExpiration(5*time.Minute))
 		return token.AccessToken, nil
 	}
-	return token.(string), nil
+	return token, nil
 }
 
 func (k *KeycloakClient) GetGroupMembers(groupName []string) ([]string, error) {
@@ -75,43 +80,46 @@ func (k *KeycloakClient) GetGroupMembers(groupName []string) ([]string, error) {
 		return nil, err
 	}
 
-	groups, exist := k.cacheClient.Get("groups")
+	groups, exist := k.cacheGroup.Get("groups")
 	if !exist {
 		groupsKeycloak, err := k.keycloakClient.GetGroups(k.ctx, token, k.Realm, gocloak.GetGroupsParams{})
+		fmt.Println(groupsKeycloak)
 		if err != nil {
-			k.cacheClient.Delete("groups")
+			k.cacheGroup.Delete("groups")
 			return nil, err
 		}
-		k.cacheClient.Set("groups", groupsKeycloak, cache.DefaultExpiration)
-	}
 
-	if groups == nil {
-		return nil, fmt.Errorf("groups not found")
+		groups = make(map[string]*gocloak.Group)
+		lo.ForEach(groupsKeycloak, func(item *gocloak.Group, index int) {
+			groups[*item.Name] = item
+		})
+
+		k.cacheGroup.Set("groups", groups, cache.WithExpiration(defaultCacheExpiration))
 	}
 
 	groupMembers := []string{}
-	for _, group := range groups.([]*gocloak.Group) {
-		if !lo.Contains(groupName, *group.Name) {
-			continue
+	for _, g := range groupName {
+		group := groups[g]
+		if group == nil {
+			return nil, fmt.Errorf("group %s not exists", g)
 		}
-		members, exist := k.cacheClient.Get(k.getGroupKey(*group.Name))
-		membersString := members.([]string)
-		if !exist {
+
+		members, exists := k.cacheGroupUsers.Get(k.getGroupKey(*group.Name))
+		if !exists {
 			membersKeycloak, err := k.keycloakClient.GetGroupMembers(k.ctx, token, k.Realm, *group.ID, gocloak.GetGroupsParams{})
 			if err != nil {
-				k.cacheClient.Delete(k.getGroupKey(*group.Name))
+				k.cacheGroupUsers.Delete(k.getGroupKey(*group.Name))
 				return nil, err
 			}
-			memberEmails := lo.Map(membersKeycloak, func(member *gocloak.User, index int) string {
-				if member.Email == nil {
+			members = lo.Map(membersKeycloak, func(item *gocloak.User, _ int) string {
+				if item.Email == nil {
 					return "None"
 				}
-				return *member.Email
+				return *item.Email
 			})
-			k.cacheClient.Set(k.getGroupKey(*group.Name), memberEmails, cache.DefaultExpiration)
-			membersString = memberEmails
+			k.cacheGroupUsers.Set(k.getGroupKey(*group.Name), members, cache.WithExpiration(defaultCacheExpiration))
 		}
-		groupMembers = append(groupMembers, membersString...)
+		groupMembers = append(groupMembers, members...)
 	}
 	return groupMembers, nil
 }
