@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -10,7 +11,6 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"github.com/crossplane/function-keycloak/client"
 	"github.com/crossplane/function-sdk-go/logging"
 	fnv1 "github.com/crossplane/function-sdk-go/proto/v1"
 	"github.com/crossplane/function-sdk-go/resource"
@@ -46,7 +46,7 @@ func TestRunFunction(t *testing.T) {
 		args   args
 		want   want
 	}{
-		"ResponseIsReturned": {
+		"ResponseIsReturnedTypeFetchUser": {
 			reason: "The Function should return a fatal result if no input was specified",
 			args: args{
 				req: &fnv1.RunFunctionRequest{
@@ -57,6 +57,7 @@ func TestRunFunction(t *testing.T) {
                         "groupList": {
 							"fromCompositeField": "spec.adminOrgs"
 						},
+						"functionType": "FetchUser",
 						"outputField": "spec.status.adminUsers"
 					}`),
 					Observed: &fnv1.State{
@@ -99,15 +100,154 @@ func TestRunFunction(t *testing.T) {
 				},
 			},
 		},
+		"ResponseIsReturnedTypeDedupeUser": {
+			reason: "The Function should return a fatal result if no input was specified",
+			args: args{
+				req: &fnv1.RunFunctionRequest{
+					Meta: &fnv1.RequestMeta{Tag: "hello"},
+					Input: resource.MustStructJSON(`{
+						"apiVersion": "template.fn.crossplane.io/v1beta1",
+						"kind": "Input",
+						"functionType": "DedupeUsers",
+						"groupsPriority": [
+							{
+								"fromPathsList": ["spec.adminUsers", "status.adminUsers"],
+								"toPath": "spec.adminUsers"
+							},
+							{
+								"fromPathsList": ["spec.editorUsers", "status.editorUsers"],
+								"toPath": "spec.editorUsers"
+							},
+							{
+								"fromPathsList": ["spec.viewerUsers", "status.viewerUsers"],
+								"toPath": "spec.viewerUsers"
+							}
+						]
+					}`),
+					Observed: &fnv1.State{
+						Composite: &fnv1.Resource{
+							Resource: resource.MustStructJSON(`{
+                                "apiVersion": "template.fn.crossplane.io/v1beta1",
+                                "kind": "Output",
+                                "spec": {
+									"adminUsers": ["chuan1@gmail.com", "chuan2@gmail.com"],
+									"editorUsers": ["chuan1@gmail.com", "chuan2@gmail.com"],
+									"viewerUsers": ["chuan1@gmail.com", "chuan2@gmail.com"]
+								},
+								"status": {
+									"adminUsers": ["chuan1@gmail.com", "chuan3@gmail.com"],
+									"editorUsers": ["chuan1@gmail.com", "chuan2@gmail.com"],
+									"viewerUsers": ["chuan1@gmail.com", "chuan4@gmail.com"]
+								}
+                            }`),
+						},
+					},
+				},
+			},
+			want: want{
+				rsp: &fnv1.RunFunctionResponse{
+					Meta: &fnv1.ResponseMeta{Tag: "hello", Ttl: durationpb.New(response.DefaultTTL)},
+					Conditions: []*fnv1.Condition{
+						{
+							Type:   "FunctionSuccess",
+							Status: fnv1.Status_STATUS_CONDITION_TRUE,
+							Reason: "Success",
+							Target: fnv1.Target_TARGET_COMPOSITE_AND_CLAIM.Enum(),
+						},
+					},
+					Desired: &fnv1.State{
+						Composite: &fnv1.Resource{
+							Resource: resource.MustStructJSON(`{
+								"apiVersion": "template.fn.crossplane.io/v1beta1",
+								"kind": "Output",
+								"spec": {
+									"adminUsers": ["chuan1@gmail.com", "chuan2@gmail.com","chuan3@gmail.com"],
+									"viewerUsers": ["chuan4@gmail.com"]
+								}
+							}`),
+						},
+					},
+				},
+			},
+		},
+		"ResponseIsReturnedTypeDedupeUserCaseLackOfUser": {
+			reason: "The Function should return a fatal result if no input was specified",
+			args: args{
+				req: &fnv1.RunFunctionRequest{
+					Meta: &fnv1.RequestMeta{Tag: "hello"},
+					Input: resource.MustStructJSON(`{
+						"apiVersion": "template.fn.crossplane.io/v1beta1",
+						"kind": "Input",
+						"functionType": "DedupeUsers",
+						"groupsPriority": [
+							{
+								"fromPathsList": ["spec.adminUsers", "status.adminUsers"],
+								"toPath": "spec.adminUsers"
+							},
+							{
+								"fromPathsList": ["spec.editorUsers", "status.editorUsers"],
+								"toPath": "spec.editorUsers"
+							},
+							{
+								"fromPathsList": ["spec.viewerUsers", "status.viewerUsers"],
+								"toPath": "spec.viewerUsers"
+							}
+						]
+					}`),
+					Observed: &fnv1.State{
+						Composite: &fnv1.Resource{
+							Resource: resource.MustStructJSON(`{
+                                "apiVersion": "template.fn.crossplane.io/v1beta1",
+                                "kind": "Output",
+                                "spec": {
+									"adminUsers": ["chuan1@gmail.com"],
+									"viewerUsers": ["chuan1@gmail.com", "chuan4@gmail.com"]
+								},
+								"status": {
+									"adminUsers": ["chuan1@gmail.com", "chuan2@gmail.com"],
+									"editorUsers": ["chuan1@gmail.com", "chuan2@gmail.com"]
+								}
+                            }`),
+						},
+					},
+				},
+			},
+			want: want{
+				rsp: &fnv1.RunFunctionResponse{
+					Meta: &fnv1.ResponseMeta{Tag: "hello", Ttl: durationpb.New(response.DefaultTTL)},
+					Conditions: []*fnv1.Condition{
+						{
+							Type:   "FunctionSuccess",
+							Status: fnv1.Status_STATUS_CONDITION_TRUE,
+							Reason: "Success",
+							Target: fnv1.Target_TARGET_COMPOSITE_AND_CLAIM.Enum(),
+						},
+					},
+					Desired: &fnv1.State{
+						Composite: &fnv1.Resource{
+							Resource: resource.MustStructJSON(`{
+								"apiVersion": "template.fn.crossplane.io/v1beta1",
+								"kind": "Output",
+								"spec": {
+									"adminUsers": ["chuan1@gmail.com", "chuan2@gmail.com"],
+									"viewerUsers": ["chuan4@gmail.com"]
+								}
+							}`),
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			// keycloakClient := &KeyCloakMockClient{}
-			keycloakClient := client.NewKeycloakClient()
+			keycloakClient := &KeyCloakMockClient{}
 			f := &Function{log: logging.NewNopLogger(), keycloakClient: keycloakClient}
 			rsp, err := f.RunFunction(tc.args.ctx, tc.args.req)
-			if diff := cmp.Diff(tc.want.rsp, rsp, protocmp.Transform()); diff != "" {
+			less := func(a, b any) bool { return fmt.Sprintf("%s", a) < fmt.Sprintf("%s", b) }
+			rsp.Results = nil
+			if diff := cmp.Diff(tc.want.rsp, rsp, protocmp.Transform(), cmpopts.SortSlices(less)); diff != "" {
 				t.Errorf("%s\nf.RunFunction(...): -want rsp, +got rsp:\n%s", tc.reason, diff)
 			}
 

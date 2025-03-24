@@ -28,11 +28,27 @@ spec:
               may reject unrecognized values.
               More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
+          functionType:
+            type: string
           groupList:
             properties:
               fromCompositeField:
                 type: string
             type: object
+          groupsPriority:
+            items:
+              properties:
+                fromPathsList:
+                  items:
+                    type: string
+                  type: array
+                toPath:
+                  type: string
+              required:
+              - fromPathsList
+              - toPath
+              type: object
+            type: array
           kind:
             description: |-
               Kind is a string value representing the REST resource this object represents.
@@ -46,7 +62,7 @@ spec:
           outputField:
             type: string
         required:
-        - outputField
+        - functionType
         type: object
     served: true
     storage: true

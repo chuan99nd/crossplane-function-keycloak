@@ -8,6 +8,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type FunctionType string
+
+const (
+	FunctionTypeFetchUser   FunctionType = "FetchUser"
+	FunctionTypeDedupeUsers FunctionType = "DedupeUsers"
+)
+
 // This isn't a custom resource, in the sense that we never install its CRD.
 // It is a KRM-like object, so we generate a CRD to describe its schema.
 
@@ -21,11 +28,20 @@ import (
 type Input struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	GroupList         `json:"groupList,omitempty"`
 
-	OutputField string `json:"outputField"`
+	FunctionType FunctionType `json:"functionType"`
+
+	GroupList   `json:"groupList,omitempty"`
+	OutputField string `json:"outputField,omitempty"`
+
+	GroupsPriority []TransformData `json:"groupsPriority,omitempty"`
 }
 
 type GroupList struct {
 	FromCompositeField string `json:"fromCompositeField,omitempty"`
+}
+
+type TransformData struct {
+	FromPathsList []string `json:"fromPathsList"`
+	ToPath        string   `json:"toPath"`
 }

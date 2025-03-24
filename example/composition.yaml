@@ -8,10 +8,48 @@ spec:
     kind: XR
   mode: Pipeline
   pipeline:
-  - step: run-the-template
+  - step: admin-user
     functionRef:
       name: function-keycloak
     input:
       apiVersion: template.fn.crossplane.io/v1beta1
       kind: Input
-      example: "Hello world"
+      functionType: FetchUser
+      groupList:
+        fromCompositeField: "spec.groups1"
+      outputField: status.adminUsers
+  - step: editor-user
+    functionRef:
+      name: function-keycloak
+    input:
+      apiVersion: template.fn.crossplane.io/v1beta1
+      kind: Input
+      functionType: FetchUser
+      groupList:
+        fromCompositeField: "spec.groups2"
+      outputField: status.editorUsers
+  - step: merge-user
+    functionRef:
+      name: function-keycloak
+    input:
+      apiVersion: template.fn.crossplane.io/v1beta1
+      kind: Input
+      functionType: DedupeUsers
+      groupsPriority:
+      - fromPathsList:
+        - status.adminUsers
+        - status.editorUsers
+        toPath: status.adminUsers123
+  # - step: merge-user-not-exist
+  #   functionRef:
+  #     name: function-keycloak
+  #   input:
+  #     apiVersion: template.fn.crossplane.io/v1beta1
+  #     kind: Input
+  #     functionType: DedupeUsers
+  #     groupsPriority:
+  #     - fromPathsList:
+  #       - status.adminUsersAbcxyz
+  #       - status.editorUsersMnpq
+  #     outputField: status.usersT
+

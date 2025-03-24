@@ -3,4 +3,10 @@ apiVersion: example.crossplane.io/v1
 kind: XR
 metadata:
   name: example-xr
-spec: {}
+spec:
+  groups1:
+  - admin
+  - ass
+  groups2:
+  - admin
+  - bss
